@@ -1,17 +1,18 @@
 from re import I
+import sys, os
 import tweepy
 import time
 import json
 import requests
 from PIL import Image
 import signal
-import sys, os
-
 from dotenv import load_dotenv
 
+DEBUG = False
+# loads .env file into memory, .env file holds appropriate key
 load_dotenv()
 
-
+# handles killing of the program
 def handler(signum, frame):
     res = input("Ctrl-c was pressed. Do you really want to exit? y/n ")
     if res == 'y':
@@ -25,25 +26,20 @@ consumer_secret = os.getenv('API_SECRET_KEY')
 access_token = os.getenv('ACCESS_TOKEN')
 access_token_secret =os.getenv('ACCESS_SECRET_TOKEN')
 
-
-consumer_key_bot = os.getenv('consumer_key_bot')
-consumer_secret_bot = os.getenv('consumer_secret_bot')
-access_token_bot = os.getenv('access_token_bot')
-access_token_secret_bot =os.getenv('access_token_secret_bot')
-
 jarrito = Image.open("jarritos.jpg")
 
+# flat file database (i know its shit, but it works...)
 mTweetLog = 'database.txt'
 with open(mTweetLog, "r") as inp:  #Read phase
     latestTweetsData = inp.readlines()  #Reads all lines into data at the same time
 
+# load ids into dynamic array
 latestTweets = []
 for data in latestTweetsData:
     latestTweets.append(data.strip())
 
 
 text = " BOOYAH! 🧨"
-
 
 # main account
 # authentication of consumer key and secret
@@ -52,47 +48,46 @@ auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
 auth.set_access_token(access_token, access_token_secret)
 api = tweepy.API(auth)
 
-# bot account
-# authentication of consumer key and secret
-auth_bot = tweepy.OAuthHandler(consumer_key_bot, consumer_secret_bot)
-# authentication of access token and secret
-auth_bot.set_access_token(access_token_bot, access_token_secret_bot)
-api_bot = tweepy.API(auth_bot)
-
-
-
+# not used in code but beneficial if i want to require users to follow my account, disabled for now
 myScreenName = "erickcnft"
 
 while True:
     # go through all the mentions in the timeline
     try:
+        # grab 10 most recent mentions on my timeline (value can fluctuate based on demand)
         for mentions in api.mentions_timeline(count=10):
-            print("*" * 100)
+            # grab json object
             status = mentions._json
+            # extract tweet id (unique)
             id = mentions.id
+            # grab screen name of person that tagged account
             screenName = mentions.user.screen_name
-            print(json.dumps(status,indent=4))
             # check if tweet has already been processed 
             if mentions.id_str not in latestTweets:
+
                 # update tweet log file
                 latestTweets.append(mentions.id_str)
                 with open(mTweetLog, "a") as document1: #write back phase
                     document1.writelines(mentions.id_str + "\n")
 
                 try:
+                    # verify that toonz jarrito command is sent
                     if "toonz jarrito" in mentions.text:
                         # check if image was included in mention
                         if 'media' in mentions.entities.keys():
+                            # grab media web link
                             weblink = mentions.entities['media'][0]['media_url']
-                            # TODO: ADD TRY/ EXCEPT
                             try:
+                                # submit post request to read in raw image bytes 
                                 requestInfura = requests.get(weblink, stream=True)
+                                # check if status code is valid
                                 if requestInfura.status_code == 200:
+                                    # save bytes data 
                                     img_data = requestInfura.content
                                     with open("0001.jpg", 'wb') as image:
                                         image.write(img_data)
                                     
-
+                                    # process saved image
                                     img_added = Image.open("0001.jpg")
                                     width = img_added.width
                                     height = img_added.height                                
@@ -101,47 +96,43 @@ while True:
                                     jarrito.save('jarritos_saved.png',"PNG")
 
                                     jarrito = Image.open("jarritos_saved.png")
-
+                                    
+                                    # create new image with jarrito transposed 
                                     img_added.paste(jarrito, (0, 0), jarrito)
                                     img_added.save('test.png',"PNG")
 
                                     # reply under the tweet 
-                                    # print(mentions.id)
-                                    # TODO: ADD TRY/CATCH
                                     media = api.media_upload('test.png')
                                     tweet = '@' + screenName + text
-                                    api.update_status(status = tweet,in_reply_to_status_id = mentions.id, media_ids=[media.media_id])
-                                    print(tweet)
+                                    try:
+                                        # submit tweet
+                                        api.update_status(status = tweet,in_reply_to_status_id = mentions.id, media_ids=[media.media_id])
+                                        print(tweet)
+                                    except Exception as e:
+                                        DEBUG and print("ERROR: Failed trying to publish tweet " + e)
 
-                                    # update tweet log file
-                                    latestTweets.append(mentions.id_str)
-                                    with open(mTweetLog, "a") as document1: #write back phase
-                                        document1.writelines(mentions.id_str + "\n")
                             except Exception as e:
-                                print("ERROR: Failed when downloading referenced image...")
+                                DEBUG and print("ERROR: Failed when downloading referenced image...")
                                 time.sleep(15)
 
                             except KeyboardInterrupt:
                                 # quit
                                 sys.exit()
 
+                        # handles case when person tags bot under image
                         elif mentions.in_reply_to_status_id_str != "null":
-                            print("not null")
-                            # print(json.dumps(status,indent=4))
-                            # print("*"*100)
+                            # grab status of referenced image
                             statusV = api.get_status(mentions.in_reply_to_status_id,tweet_mode='extended') 
                             statusJson = statusV._json
-                            print(json.dumps(statusJson,indent=4))
-                            # print(status.entities.keys())
+                            # verify that image exists in the original tweet
                             if 'media' in statusV.entities.keys():
-                                print("there is media")
+                                # extract weblink from original tweet
                                 weblink = statusV.entities['media'][0]['media_url']
                                 try:
-                                    print("trying " + weblink)
+                                    # submit get request to image url
                                     requestInfura = requests.get(weblink, stream=True)
-                                    print("passed")
                                     if requestInfura.status_code == 200:
-                                        print("entered")
+                                        # process bytes read back
                                         img_data = requestInfura.content
                                         with open("0001.jpg", 'wb') as image:
                                             image.write(img_data)
@@ -157,6 +148,7 @@ while True:
 
                                         jarrito = Image.open("jarritos_saved.png")
 
+                                        # truncate jarrito on image
                                         img_added.paste(jarrito, (0, 0), jarrito)
                                         img_added.save('test.png',"PNG")
 
@@ -164,18 +156,16 @@ while True:
                                         media = api.media_upload('test.png')
                                         tweet = '@' + screenName + text
                                         try:
+                                            # submit tweet
                                             api.update_status(status = tweet,in_reply_to_status_id = mentions.id, media_ids=[media.media_id])
                                             print(tweet)
-                                            # update tweet log file
-                                            latestTweets.append(mentions.id_str)
-                                            with open(mTweetLog, "a") as document1: #write back phase
-                                                document1.writelines(mentions.id_str + "\n")
+
                                         except Exception as e:
-                                            print("ERROR: Failed trying to publish tweet " + e)
+                                            DEBUG and print("ERROR: Failed trying to publish tweet " + e)
                                         
 
                                 except Exception as e:
-                                    print("ERROR: Failed trying to download reference image in reply...")
+                                    DEBUG and print("ERROR: Failed trying to download reference image in reply...")
                                     time.sleep(15)
 
                                 except KeyboardInterrupt:
@@ -183,10 +173,10 @@ while True:
                                     sys.exit()
                                 
                         else:
-                            print("ERROR: Mention does not include image...")
+                            DEBUG and print("ERROR: Mention does not include image...") 
 
                     else:
-                        print("ERROR: Invalid Command.... " + mentions.text)
+                        DEBUG and print("ERROR: Invalid Command.... " + mentions.text) 
 
                         # update tweet log file
                         latestTweets.append(mentions.id_str)
@@ -194,9 +184,8 @@ while True:
                             document1.writelines(mentions.id_str + "\n")
 
                 except Exception as e:
-                    print("ERROR: Issue with checking friends " + mentions.text)
-                    print(e)
-                    # time.sleep(15)
+                    DEBUG and print("ERROR: Issue with checking friends " + mentions.text)
+                    DEBUG and  print(e)
                     # update tweet log file
                     latestTweets.append(mentions.id_str)
                     with open(mTweetLog, "a") as document1: #write back phase
@@ -206,15 +195,15 @@ while True:
                     # quit
                     sys.exit()
             else:
-                print("ERROR: Data already in database... " + mentions.text)
+                DEBUG and print("ERROR: Data already in database... " + mentions.text)
         
         
         time.sleep(15)
 
     except Exception as e:
-        print("ERROR: Issue with reading from timeline ")
-        print(e)
-        print()
+        DEBUG and print("ERROR: Issue with reading from timeline ")
+        DEBUG and print(e)
+        DEBUG and print()
         time.sleep(15)
 
     except KeyboardInterrupt:
