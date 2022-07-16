@@ -154,7 +154,7 @@ while True:
 
                                         # reply under the tweet 
                                         media = api.media_upload('test.png')
-                                        tweet = '@' + screenName + text
+                                        tweet = '@' + statusJson['user']['screen_name'] + ' @' + screenName + text
                                         try:
                                             # submit tweet
                                             api.update_status(status = tweet,in_reply_to_status_id = mentions.id, media_ids=[media.media_id])
